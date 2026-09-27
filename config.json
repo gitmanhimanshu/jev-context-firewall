@@ -1,0 +1,25 @@
+{
+  "port": 8192,
+  "jev_base_url": "https://api.codiv.ai",
+  "jev_api_key": "",
+  "jev_model": "openjev-latest",
+  "jev_timeout_ms": 15000,
+  "relevance_threshold": 0.60,
+  "min_confidence_threshold": 0.60,
+  "tail_size": 4,
+  "sacrosanct_tail_size": 2,
+  "chunk_max_tokens": 1000,
+  "chunk_overlap_percent": 0.20,
+  "upstream_defaults": {
+    "openai": "https://api.openai.com",
+    "anthropic": "https://api.anthropic.com",
+    "gemini": "https://generativelanguage.googleapis.com"
+  },
+  "upstream_headers": {
+    "Origin": "https://trae.ai",
+    "Referer": "https://trae.ai/",
+    "HTTP-Referer": "https://trae.ai",
+    "X-Title": "Trae",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Trae/1.0.10282 Chrome/120.0.6099.291 Electron/28.2.1 Safari/537.36 Trae-Agent"
+  }
+}
