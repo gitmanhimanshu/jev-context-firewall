@@ -1,47 +1,71 @@
 # 🛡️ Jev Context Firewall Proxy (Python Edition)
 
-A high-performance asynchronous reverse proxy in Python (FastAPI + HTTPX) that intercepts AI coding agent traffic (Cursor, Trae, Cline, Antigravity), evaluates conversation context using **Codiv OpenJev (64K context)**, guarantees **100% unbreakable agentic flow**, eliminates redundant tool bloat & superseded file reads, and streams pruned payloads (-75% to -90% tokens) to upstream reasoning LLMs (Anthropic Claude, OpenAI, Google Gemini, OpenRouter).
+A high-performance, asynchronous reverse proxy built with **Python (FastAPI + HTTPX)** that intercepts AI coding agent traffic (Cursor, Trae, Cline, Antigravity), evaluates conversation context using **Codiv OpenJev (64K context)**, guarantees **100% unbreakable agentic flow**, eliminates redundant tool bloat & superseded file reads, and streams pruned payloads (**-75% to -90% tokens**) to upstream reasoning LLMs (Anthropic Claude, OpenAI, Google Gemini, OpenRouter).
 
 ---
 
-## 💡 Yeh Karta Kya Hai? (In Simple Words)
+## 🎯 What Problem Does This Solve?
 
-Jab aap Cursor ya Trae jaise AI IDEs use karte hain, toh thodi der mein context size bohot bada (**50k se 150k+ tokens**) ho jata hai. Isme puraani files ke lambe reads, purane command outputs aur logs hote hain jo ab kisi kaam ke nahi hote. Is wajah se:
-- LLM slow ho jata hai (high latency).
-- API bills bohot zyada badh jaate hain.
+When working with autonomous AI coding agents (such as Cursor, Trae, Cline, or Antigravity), multi-turn conversation payloads quickly swell to **50,000 to 150,000+ tokens**. 
 
-👉 **Yeh Proxy aapke IDE aur LLM ke beech mein baithta hai:**
-1. Context ko intercept karke **~1000 tokens ke micro-chunks** mein todta hai.
-2. **OpenJev AI Brain** se evaluate karwata hai ki kaun sa chunk kaam ka hai aur kaun sa kachra.
-3. Faltu chunks ko delete (evict) karta hai aur puraane file reads ko chote stubs se replace karta hai.
-4. **75% se 90% tokens bacha kar** Anthropic ya OpenAI ko fast stream kar deta hai.
-5. Strict protocol checks ensure karte hain ki **Zero HTTP 400 errors** aayein.
+These bloated payloads are filled with:
+- Multi-thousand-line file dumps from earlier turns that have since been modified or deleted.
+- Verbose terminal and build outputs from finished tasks.
+- Dead-end troubleshooting logs and outdated conversational context.
+
+### The Consequences:
+1. **Excessive API Bills**: You repeatedly pay high per-token pricing on every turn for stale, irrelevant data.
+2. **High Latency & Slow Generation**: Large context windows slow down time-to-first-token (TTFT) and degrade model reasoning speed.
+3. **Context Degradation & Hallucinations**: Information overload causes LLMs to lose focus on the active task.
+
+---
+
+## 💡 How It Works
+
+The **Jev Context Firewall** operates as a local or remote transparent proxy between your IDE and upstream LLM providers.
+
+1. **Transparent Interception & Routing**: Intercepts requests sent by your IDE and dynamically resolves target providers (Anthropic, OpenAI, or Google Gemini).
+2. **Claude BPE Token Estimation**: Accurately estimates token weight using calibrated BPE ratios ($2.36$ bytes/token).
+3. **Atomic Turn Grouping**: Bundles human prompts, assistant tool calls, and tool outputs together into unbreakable atomic units.
+4. **Adaptive Micro-Chunking**: Protects the active and immediate conversational tail while slicing older history into atomic $\sim 1,000$-token chunks.
+5. **Secret Sanitization**: Automatically scrubs Bearer tokens, API keys, and database connection URIs prior to evaluation.
+6. **OpenJev 6D Cognitive Evaluation**: Sends chunk summaries in parallel to **Codiv OpenJev (`openjev-latest`)** via `/v1/systemone` across 6 cognitive dimensions:
+   - **Relevance Score (`noul`)**: Continuous relevance score from $0.00$ to $1.00$.
+   - **Topic Relationship**: `identical_thread`, `shared_background`, or `completely_disjoint`.
+   - **Context Dependency**: `critical_loss`, `minor_context`, or `zero_loss`.
+   - **Lifecycle State**: `foundational_rule`, `active_thread`, `completed_subtask`, or `irrelevant_tangent`.
+   - **Token Cost Waste**: `heavy_waste`, `moderate_cost`, or `essential_tokens`.
+   - **Preservation Target**: `keep_full_detail` or `drop_completely`.
+7. **Consensus Arbitration**: Determines whether each chunk should be kept in full (`KEEP_FULL`), compressed (`COMPRESS`), or safely pruned (`EVICT`).
+8. **Tail & Superseded Tool Bloat Optimizer**: Detects files that were read in earlier turns and subsequently edited in later turns, replacing multi-thousand-token dumps with concise reference stubs.
+9. **Protocol Stitching & Anti-400 Sanitization**: Validates tool call pairings and enforces strict role alternation (`user` $\leftrightarrow$ `assistant`), guaranteeing **Zero HTTP 400 errors**.
+10. **Zero-Delay SSE Streaming**: Streams upstream Server-Sent Events (SSE) back to the client byte-for-byte with immediate flushing (`X-Accel-Buffering: no`).
 
 ---
 
 ## 🏛️ Architecture & Component Flow
 
 ```
-[ AI IDE (Cursor / Trae) ]
-            │  (HTTP POST /v1/messages)
-            ▼
+[ AI IDE (Cursor / Trae / Cline) ]
+                 │  (HTTP POST /v1/messages)
+                 ▼
 ┌─────────────────────────────────────────────────────────────┐
 │ 🛡️ Jev Context Firewall (Python FastAPI Proxy)             │
 │                                                             │
 │  1. Provider Router (router.py)                             │
 │     Resolves destination (Anthropic, OpenAI, or Gemini)     │
 │                                                             │
-│  2. Turn Grouping & Claude Token Estimator (parser.py)      │
-│     Bundles user prompt + tool calls + results atomically   │
+│  2. Turn Grouping & Token Estimator (parser.py)             │
+│     Locks user prompt + tool calls + results into turns     │
 │                                                             │
 │  3. Adaptive Chunker (chunker.py)                           │
-│     Protects recent tail, micro-chunks history (~1000 tok)  │
+│     Protects active tail, micro-chunks history (~1000 tok)  │
 │                                                             │
 │  4. Secret Sanitizer (extractor.py)                         │
 │     Redacts Bearer tokens, API keys, and connection URIs    │
 │                                                             │
 │  5. OpenJev 6D Cognitive Evaluation (jev_client.py)         │
-│     Scores: Relevance (noul), Topic, Dependency, Waste      │
+│     Evaluates relevance, lifecycle, topic, and waste        │
 │                                                             │
 │  6. Causal Consensus Resolver (causal_graph.py)             │
 │     Arbitrates KEEP_FULL vs EVICT decisions                 │
@@ -50,47 +74,55 @@ Jab aap Cursor ya Trae jaise AI IDEs use karte hain, toh thodi der mein context 
 │     Replaces superseded file reads (>400 tok) with stubs    │
 │                                                             │
 │  8. Protocol Stitcher (parser.py)                           │
-│     Fixes role alternation & tool couplings (Anti-400)      │
+│     Enforces role alternation & pairs tool results (Anti-400│
 └─────────────────────────────────────────────────────────────┘
-            │  (Pruned payload: -75% to -90% tokens)
-            ▼
+                 │  (Pruned payload: -75% to -90% tokens)
+                 ▼
 [ Upstream LLM (Anthropic / OpenAI / Gemini / OpenRouter) ]
-            │  (Byte-for-byte SSE Stream)
-            ▼
-[ Developer IDE ] (Real-time response)
+                 │  (Real-Time SSE Stream)
+                 ▼
+[ Developer IDE ] (Instant response)
 ```
 
 ---
 
 ## 🚀 Quickstart
 
-### 1. Requirements & Setup
-Make sure you have Python 3.10+ installed:
+### 1. Clone & Install Dependencies
+Ensure you have Python 3.10+ installed:
 ```bash
 git clone https://github.com/gitmanhimanshu/jev-context-firewall.git
 cd jev-context-firewall
 pip install -r requirements.txt
 ```
 
-### 2. Configuration (`.env` or `config.json`)
-Copy `.env.example` to `.env` and add your OpenJev API key:
+### 2. Configure Environment (`.env` or `config.json`)
+Copy the environment template:
 ```bash
 cp .env.example .env
 ```
-Inside `.env`:
+
+Open `.env` and insert your OpenJev API key:
 ```env
+# OpenJev / Codiv API Key (Obtain from https://api.codiv.ai)
 JEV_API_KEY=your_codiv_api_key_here
+
+# Optional multi-key rotation pool for high concurrency
+JEV_API_KEYS=key1,key2,key3
+JEV_CONCURRENCY_PER_KEY=3
+
+# Proxy Server Port
 PORT=8192
 ```
 
 ### 3. Launch the Proxy
-Run using Python:
+Run with Python:
 ```bash
 python main.py --config config.json
 ```
-Or on Windows, simply double-click `start.bat`.
+Or on Windows, double-click **`start.bat`**.
 
-Output:
+Console Output:
 ```text
 ==================================================================
        [+] JEV CONTEXT FIREWALL PROXY (Python Native)             
@@ -109,70 +141,90 @@ Press Ctrl+C to stop.
 
 ---
 
-## ⚙️ IDE Configuration (Cursor, Trae, Cline, etc.)
+## ⚙️ IDE Configuration (Trae, Cursor, Cline, Antigravity)
 
 Point your IDE's Base URL to:
 👉 **`http://127.0.0.1:8192`** (or `http://127.0.0.1:8192/v1`)
 
-### A. Trae IDE
-- Settings $\rightarrow$ Custom Models $\rightarrow$ Add Model
+### A. Trae IDE (Anthropic Protocol)
+- Navigate to: **Settings** $\rightarrow$ **Custom Models** $\rightarrow$ **Add Model**
 - Provider: **Anthropic**
 - Model Name: `claude-opus-4-8` or `claude-3-5-sonnet-20241022`
 - Base URL: `http://127.0.0.1:8192`
 - API Key: Your Anthropic API Key
 
-### B. Dynamic Multi-Provider Routing
-You can dynamically route to any upstream provider via headers or query parameters:
+### B. Cursor IDE / Cline
+- Provider: **OpenAI** or **Anthropic**
+- Override Base URL: `http://127.0.0.1:8192/v1`
+- API Key: Your provider API key
+
+### C. Dynamic Multi-Provider Routing
+You can route dynamically through the proxy to any provider via custom headers or query parameters:
 
 ```bash
-# Example 1: Forward to Anthropic via custom header
+# Example 1: Route to Anthropic using custom upstream header
 curl -X POST http://localhost:8192/v1/messages \
   -H "X-Upstream-URL: https://api.anthropic.com" \
   -H "x-api-key: your-anthropic-key" \
   -H "Content-Type: application/json" \
   -d '{"model": "claude-3-5-sonnet-20241022", "messages": [{"role": "user", "content": "Hello"}]}'
 
-# Example 2: Forward to OpenRouter via query param
+# Example 2: Route to OpenRouter via query parameter
 curl -X POST "http://localhost:8192/v1/chat/completions?upstream=https://openrouter.ai/api" \
   -H "Authorization: Bearer your-openrouter-key" \
   -H "Content-Type: application/json" \
   -d '{"model": "deepseek/deepseek-r1", "messages": [{"role": "user", "content": "Hello"}]}'
+
+# Example 3: Route via dedicated path prefix
+curl -X POST http://localhost:8192/proxy/openai/v1/chat/completions \
+  -H "Authorization: Bearer your-openai-key" \
+  -H "Content-Type: application/json" \
+  -d '{"model": "gpt-4o", "messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
 ---
 
 ## 📊 Real-Time Web Telemetry Dashboard
 
-Open your browser at:
+Open your browser and navigate to:
 👉 **`http://localhost:8192/dashboard`**
 
-Features:
-- **Total Requests**: Intercepted IDE requests counter.
-- **Tokens Saved**: Real-time token reduction counter.
-- **Estimated Cost Saved**: Dollar (\$ USD) savings calculated automatically.
-- **Average Reduction %**: Live reduction efficiency (usually 75%–90%).
-- **Recent Turns Table**: Latency, endpoint paths, reduction %, and status.
+### Live Metrics Include:
+- **Total Requests**: Intercepted agent turn counter.
+- **Tokens Saved**: Cumulative token volume pruned from context payloads.
+- **Average Reduction %**: Context reduction percentage (typically **75% to 90%**).
+- **Estimated Cost Saved**: Dollar (\$ USD) savings calculated automatically ($3.00/1M tokens).
+- **Recent Turns Table**: Real-time table displaying endpoints, original vs. pruned token counts, latencies, and statuses.
+
+---
+
+## 🛡️ Safeguards & Reliability Guarantees
+
+1. **Fail-Open Resilience**: If Codiv OpenJev is temporarily unreachable, times out, or encounters an error, the proxy silently forwards the full original payload without interrupting the developer's IDE workflow.
+2. **Unbreakable Tool Protocol**: Ensures every tool result is paired with an active assistant tool call. Orphaned tool outputs are converted into historical user text to prevent Anthropic/OpenAI HTTP 400 errors.
+3. **Multi-Key Pool & Semaphore Rate Limiting**: Coordinates concurrent user traffic using async semaphores, preventing upstream rate limits (HTTP 429) with automatic key failover.
+4. **Data Privacy**: Redacts sensitive credentials (Bearer tokens, passwords, database URIs) before transmitting chunk summaries for cognitive evaluation.
 
 ---
 
 ## 🧪 Automated Test Suite
 
-Run the full automated test suite:
+Run the test suite to verify protocol integrity and pruning behavior:
 ```bash
 python run_tests.py
 ```
 
-Tests cover:
-- ✅ Consensus Arbitration Logic (6D Cognitive Scoring)
-- ✅ Multi-Provider Routing (Anthropic, OpenAI, Gemini)
-- ✅ Key Pool Round-Robin Rotation & Concurrency
-- ✅ Strict Role Alternation (User $\leftrightarrow$ Assistant)
-- ✅ Tool Integrity & Unbreakable Coupling
-- ✅ Tail Superseded Read Optimization
-- ✅ Secret Scrubbing (Bearer, API keys, DB URIs)
-- ✅ End-to-End Payload Pruning for all 3 formats
+### Verified Test Cases:
+- ✅ **Consensus Arbitration**: 6D cognitive scoring and decision rules.
+- ✅ **Provider Routing**: Dynamic routing across Anthropic, OpenAI, and Gemini.
+- ✅ **Key Pool Rotation**: Thread-safe round-robin API key selection & multi-key concurrency.
+- ✅ **Role Alternation**: Strict `user` $\leftrightarrow$ `assistant` alternation.
+- ✅ **Tool Integrity**: Two-way tool use and tool result pairing.
+- ✅ **Tail Optimization**: Replacement of superseded file reads with summary stubs.
+- ✅ **Secret Sanitization**: Regex scrubbing of sensitive keys and URIs.
+- ✅ **End-to-End Pruning**: Payload validation across Anthropic, OpenAI, and Gemini native formats.
 
 ---
 
 ## 📄 License
-MIT License.
+This project is open-source software licensed under the **MIT License**.
