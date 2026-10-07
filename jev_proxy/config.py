@@ -18,6 +18,9 @@ class Config:
     min_confidence_threshold: float = 0.60
     tail_size: int = 4
     sacrosanct_tail_size: int = 2
+    evaluator_mode: str = "cloud"  # "cloud", "ollama", or "hybrid"
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "qwen2.5-coder:1.5b"
     chunk_max_tokens: int = 1000
     chunk_overlap_percent: float = 0.20
     upstream_defaults: Dict[str, str] = field(
@@ -162,6 +165,15 @@ def load_config(path: str = "config.json") -> Config:
             cfg.jev_concurrency_per_key = int(os.getenv("JEV_CONCURRENCY_PER_KEY", "3"))
         except ValueError:
             pass
+
+    if os.getenv("JEV_EVALUATOR_MODE"):
+        cfg.evaluator_mode = os.getenv("JEV_EVALUATOR_MODE", "cloud").strip().lower()
+
+    if os.getenv("OLLAMA_BASE_URL"):
+        cfg.ollama_base_url = os.getenv("OLLAMA_BASE_URL", "").rstrip("/")
+
+    if os.getenv("OLLAMA_MODEL"):
+        cfg.ollama_model = os.getenv("OLLAMA_MODEL", "")
 
     if os.getenv("JEV_BASE_URL"):
         cfg.jev_base_url = os.getenv("JEV_BASE_URL", "").rstrip("/")

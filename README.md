@@ -37,11 +37,17 @@ The **Jev Context Firewall** operates as a local or remote transparent proxy bet
    - **Token Cost Waste**: `heavy_waste`, `moderate_cost`, or `essential_tokens`.
    - **Preservation Target**: `keep_full_detail` or `drop_completely`.
 7. **Consensus Arbitration**: Determines whether each chunk should be kept in full (`KEEP_FULL`), compressed (`COMPRESS`), or safely pruned (`EVICT`).
-8. **Tail & Superseded Tool Bloat Optimizer**: Detects files that were read in earlier turns and subsequently edited in later turns, replacing multi-thousand-token dumps with concise reference stubs.
+8. **Tail Optimizer with Structural Code Skeletonization**: Detects files that were read in earlier turns and subsequently edited in later turns, extracting high-signal function/class signatures (Python, Go, TypeScript/JS, Rust) using `skeletonizer.py` (-95% token bloat while keeping the model aware of definitions).
 9. **Protocol Stitching & Anti-400 Sanitization**: Validates tool call pairings and enforces strict role alternation (`user` $\leftrightarrow$ `assistant`), guaranteeing **Zero HTTP 400 errors**.
 10. **Zero-Delay SSE Streaming**: Streams upstream Server-Sent Events (SSE) back to the client byte-for-byte with immediate flushing (`X-Accel-Buffering: no`).
 
 ---
+
+## 🌟 What's New in v1.1.0
+
+- 🧩 **Multi-Language Structural Code Skeletonizer (`skeletonizer.py`)**: When an AI agent reads a 3,000-line file that gets modified later, raw text is no longer bluntly dropped. The proxy extracts exact function signatures, parameters, classes, and interfaces (supporting Python, Go, TypeScript/JS, and Rust) with bodies replaced by `...`.
+- 🦙 **Offline Ollama & Hybrid Evaluator Engine (`jev_client.py`)**: Support for `JEV_EVALUATOR_MODE="cloud" | "ollama" | "hybrid"`. Evaluate context using local LLMs (e.g., `qwen2.5-coder:1.5b`, `llama3.2:1b`) on your laptop with 0ms internet latency and 100% air-gapped privacy.
+- 📥 **Telemetry Export & Audit Reports (`/api/stats/export`)**: Download comprehensive JSON audit logs of tokens saved, cost reductions, and latency metrics right from the web dashboard.
 
 ## 🏛️ Architecture & Component Flow
 

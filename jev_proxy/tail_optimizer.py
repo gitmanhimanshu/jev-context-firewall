@@ -3,6 +3,15 @@ from typing import Dict, List, Optional, Set
 
 from jev_proxy.config import Config
 from jev_proxy.parser import Message, Turn, estimate_tokens, is_tool_result_message
+from jev_proxy.skeletonizer import generate_code_skeleton
+
+
+def _format_superseded_replacement(superseded_file: str, raw_content: str, tokens: int) -> str:
+    skeleton = generate_code_skeleton(raw_content, superseded_file)
+    if skeleton:
+        return f"[Tool Result: Structural Skeleton of {superseded_file} (superseded by later edits, {tokens} tokens)]:\n{skeleton}"
+    return f"[Tool Result: read of {superseded_file} ({tokens} tokens) superseded by later edits]"
+
 
 
 class TailOptimizer:
@@ -93,14 +102,16 @@ class TailOptimizer:
 
                 # Gemini functionResponse
                 if "functionResponse" in item and isinstance(item["functionResponse"], dict):
-                    raw_resp = json.dumps(item["functionResponse"].get("response", {}))
+                    fr = item["functionResponse"]
+                    raw_resp = json.dumps(fr.get("response", {}))
                     tokens = estimate_tokens(raw_resp)
                     if is_superseded and tokens > 400:
                         new_item = dict(item)
+                        replacement = _format_superseded_replacement(superseded_file, raw_resp, tokens)
                         new_item["functionResponse"] = {
                             "name": item["functionResponse"].get("name", ""),
                             "response": {
-                                "result": f"[Tool Result: read of {superseded_file} ({tokens} tokens) superseded by later edits]"
+                                "result": replacement
                             },
                         }
                         new_blocks.append(new_item)
@@ -115,7 +126,7 @@ class TailOptimizer:
                     tokens = estimate_tokens(c_str)
                     if is_superseded and tokens > 400:
                         new_item = dict(item)
-                        new_item["content"] = f"[Tool Result: read of {superseded_file} ({tokens} tokens) superseded by later edits]"
+                        new_item["content"] = _format_superseded_replacement(superseded_file, c_str, tokens)
                         new_blocks.append(new_item)
                         continue
                     new_blocks.append(item)
@@ -137,7 +148,7 @@ class TailOptimizer:
         if is_superseded and tokens > 400:
             return Message(
                 role=msg.role,
-                content=f"[Tool Result: read of {superseded_file} ({tokens} tokens) superseded by later edits]",
+                content=_format_superseded_replacement(superseded_file, content_str, tokens),
                 tool_calls=msg.tool_calls,
                 tool_call_id=msg.tool_call_id,
                 name=msg.name,

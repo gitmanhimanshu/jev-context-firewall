@@ -68,6 +68,19 @@ class ProxyServer:
         async def stats():
             return global_tracker.get_metrics_dict()
 
+        @self.app.get("/api/stats/export")
+        async def export_stats():
+            metrics = global_tracker.get_metrics_dict()
+            report = {
+                "report_timestamp": datetime.now().isoformat(),
+                "proxy_engine": "Jev Context Firewall (Python)",
+                "metrics": metrics,
+            }
+            return JSONResponse(
+                content=report,
+                headers={"Content-Disposition": 'attachment; filename="jev_firewall_report.json"'},
+            )
+
         @self.app.get("/api/dump/latest")
         async def dump_latest():
             path = os.path.join("dumps", "latest_incoming.json")

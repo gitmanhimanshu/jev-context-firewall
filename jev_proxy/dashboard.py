@@ -146,7 +146,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   <div class="container">
     <header>
       <h1><span>🛡️</span> Jev Context Firewall (Python) <span class="badge">Online</span></h1>
-      <span style="color: var(--muted); font-size: 0.85rem;" id="last-update">Updating...</span>
+      <div style="display: flex; align-items: center; gap: 1rem;">
+        <a href="/api/stats/export" download class="pill" style="text-decoration:none; background: rgba(59, 130, 246, 0.2); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.4); padding: 0.35rem 0.75rem; cursor:pointer;">📥 Export JSON Report</a>
+        <span style="color: var(--muted); font-size: 0.85rem;" id="last-update">Updating...</span>
+      </div>
     </header>
 
     <div class="grid">

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Tuple
@@ -48,6 +49,9 @@ class JevClient:
             return keys[idx % len(keys)]
 
     async def evaluate_batch(self, chunk_id: int, state: Any) -> EvaluationResult:
+        if self.cfg.evaluator_mode == "ollama":
+            return await self._evaluate_ollama(chunk_id, state)
+
         start_time = time.time()
         url = f"{self.cfg.jev_base_url}/v1/systemone"
 
@@ -133,6 +137,8 @@ class JevClient:
                 latency_ms = int((time.time() - start_time) * 1000)
 
         except Exception as e:
+            if self.cfg.evaluator_mode == "hybrid":
+                return await self._evaluate_ollama(chunk_id, state)
             # Fail-open on timeout or connection error
             latency_ms = int((time.time() - start_time) * 1000)
             return EvaluationResult(
@@ -145,6 +151,8 @@ class JevClient:
             )
 
         if resp is None or resp.status_code != 200:
+            if self.cfg.evaluator_mode == "hybrid":
+                return await self._evaluate_ollama(chunk_id, state)
             status_code = resp.status_code if resp is not None else 0
             return EvaluationResult(
                 chunk_id=chunk_id,
@@ -227,6 +235,76 @@ class JevClient:
                 latency_ms=latency_ms,
                 error=str(e),
             )
+
+    async def _evaluate_ollama(self, chunk_id: int, state: Any) -> EvaluationResult:
+        start_time = time.time()
+        url = f"{self.cfg.ollama_base_url}/api/generate"
+        prompt = (
+            f"You are a cognitive context firewall engine for AI coding agents.\n"
+            f"Active User Query: {state.get('current_query', '')}\n"
+            f"Historical Chunk Summary: {json.dumps(state.get('chunk_summary', []))}\n"
+            f"Entities touched: {json.dumps(state.get('entities', {}))}\n"
+            f"Evaluate if this chunk is needed to fulfill the active query.\n"
+            f"Output JSON ONLY in this format:\n"
+            f'{{"noul": 0.85, "topic": "identical_thread", "context_dep": "critical_loss", '
+            f'"lifecycle": "active_thread", "token_waste": "essential_tokens", "preservation": "keep_full_detail"}}'
+        )
+        req_body = {
+            "model": self.cfg.ollama_model,
+            "prompt": prompt,
+            "stream": False,
+            "format": "json",
+        }
+        try:
+            resp = await self.http_client.post(
+                url, json=req_body, timeout=float(self.cfg.jev_timeout_ms) / 1000.0
+            )
+            latency_ms = int((time.time() - start_time) * 1000)
+            if resp.status_code == 200:
+                raw_text = resp.json().get("response", "")
+                parsed = json.loads(raw_text)
+                noul = float(parsed.get("noul", 0.0))
+                topic = str(parsed.get("topic", "completely_disjoint"))
+                context_dep = str(parsed.get("context_dep", "zero_loss"))
+                lifecycle = str(parsed.get("lifecycle", "completed_subtask"))
+                token_waste = str(parsed.get("token_waste", "heavy_waste"))
+                preservation = str(parsed.get("preservation", "drop_completely"))
+
+                action, reason = arbitrate_consensus(
+                    noul, topic, context_dep, lifecycle, token_waste, preservation, self.cfg.relevance_threshold
+                )
+                return EvaluationResult(
+                    chunk_id=chunk_id,
+                    selected=(action != ACTION_EVICT),
+                    action=action,
+                    reason=f"ollama_{reason}",
+                    noul=noul,
+                    topic=topic,
+                    context_dep=context_dep,
+                    lifecycle=lifecycle,
+                    token_waste=token_waste,
+                    preservation_target=preservation,
+                    latency_ms=latency_ms,
+                )
+        except Exception as e:
+            latency_ms = int((time.time() - start_time) * 1000)
+            return EvaluationResult(
+                chunk_id=chunk_id,
+                selected=True,
+                action=ACTION_KEEP_FULL,
+                reason=f"fail_open_ollama_error ({e})",
+                latency_ms=latency_ms,
+                error=str(e),
+            )
+
+        latency_ms = int((time.time() - start_time) * 1000)
+        return EvaluationResult(
+            chunk_id=chunk_id,
+            selected=True,
+            action=ACTION_KEEP_FULL,
+            reason="fail_open_ollama_status",
+            latency_ms=latency_ms,
+        )
 
 
 def arbitrate_consensus(

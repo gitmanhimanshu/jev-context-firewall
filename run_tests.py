@@ -16,6 +16,16 @@ from tests.test_e2e import (
     test_secret_sanitizer,
     test_process_and_prune_all_three_formats,
 )
+from tests.test_skeletonizer import (
+    test_python_skeletonizer,
+    test_go_skeletonizer,
+    test_ts_skeletonizer,
+    test_tail_optimizer_with_skeleton,
+)
+from tests.test_ollama import (
+    test_ollama_evaluator_mode_config,
+    test_hybrid_evaluator_mode,
+)
 
 
 async def main():
@@ -35,11 +45,17 @@ async def main():
         ("Causal Entity Linking", test_causal_entity_linking),
         ("Tail Optimizer", test_tail_optimizer),
         ("Secret Sanitizer", test_secret_sanitizer),
+        ("Python Skeletonizer", test_python_skeletonizer),
+        ("Go Skeletonizer", test_go_skeletonizer),
+        ("TypeScript Skeletonizer", test_ts_skeletonizer),
+        ("Tail Optimizer with Structural Skeleton", test_tail_optimizer_with_skeleton),
     ]
 
     async_tests = [
         ("API Key Pool Rotation", test_api_key_pool_rotation),
         ("Process & Prune All Three Formats", test_process_and_prune_all_three_formats),
+        ("Ollama Evaluator Mode Config", test_ollama_evaluator_mode_config),
+        ("Hybrid Offline Fail-Open Evaluator", test_hybrid_evaluator_mode),
     ]
 
     passed = 0
